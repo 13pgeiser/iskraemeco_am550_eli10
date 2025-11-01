@@ -179,9 +179,25 @@ class MyHdlc:
             break
 
 hdlc = MyHdlc()
-for data in eight_bits:
-    print('----')
-    hdlc.parse_hdlc(data)
+if False:
+    for data in eight_bits:
+        print('----')
+        hdlc.parse_hdlc(data)
+else:
+    import serial
+    ser = serial.Serial()
+    ser.baudrate = 115200
+    ser.stopbits=serial.STOPBITS_ONE
+    ser.timeout=5
+    ser.port="/dev/ttyUSB0"
+    ser.open()
+    while True:
+        data = ser.read(500)
+        print('---')
+        print(len(data))
+        print(' '.join(['0x%02X' % x for x in data]))
+        hdlc.parse_hdlc(data)
+
 #hdlc.parse_hdlc(eight_bits[0])
 
 # <HDLC len="91" >
@@ -221,3 +237,31 @@ for data in eight_bits:
 # print('0x%x' % 13)
 # print('0x%x' % 312)
 # print(0x138)
+
+
+
+
+    # Uint32: 0x00000000 (0)
+    # Uint32: 0x0000018A (394)      # Instant? 1.2.7.0
+    # Uint32: 0x00591D3F (5840191)  # 1.1.8.0
+    # Uint32: 0x0082085E (8521822)  # 1.2.8.0
+    # Uint16: 0x0048 (72) ?
+    # Uint16: 0x005D (93) ?
+    # Uint16: 0x0061 (97) ?
+    # Uint32: 0x003689FC (3574268) # 1.1.8.1
+    # Uint32: 0x00229343 (2265923) # 1.1.8.2
+    # Uint32: 0x0082085E (8521822) # 1.2.8.0 ?
+    # Uint32: 0x00000000 (0) ?
+
+
+    # Uint32: 0x0000087E (2174)
+    # Uint32: 0x00000000 (0)
+    # Uint32: 0x00591DE6 (5840358)
+    # Uint32: 0x00820861 (8521825)
+    # Uint16: 0x0299 (665)
+    # Uint16: 0x012C (300)
+    # Uint16: 0x0149 (329)
+    # Uint32: 0x00368AA3 (3574435)
+    # Uint32: 0x00229343 (2265923)
+    # Uint32: 0x00820861 (8521825)
+    # Uint32: 0x00000000 (0)

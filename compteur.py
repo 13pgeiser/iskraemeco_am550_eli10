@@ -68,27 +68,27 @@ class MyHdlc:
         self._escape_next = False
         self._data = []
 
-    def parse_hdlc(self, data: bytes):
-        print(' '.join(['%02X' % x for x in data]))
-        for c in data:
-            if c == MyHdlc.HDLC_FLAG:
-                if self._data:
-                    self._previous = self._data
-                    #print(' '.join(['%02X' % x for x in self._data]))
-                    crc = self._data[-2:]
-                    crc = crc[1] << 8 | crc[0]
-                    self._data = self._data[:-2]
-                    #print(' '.join(['%02X' % x for x in self._data]))
-                    data = bytes(self._data)
-                    computed_crc = crc16(data)
-                    print('xxxxxx -> 0x%04X 0x%04X' %(crc, computed_crc))
-                    #print('xxxxxx -> 0x%04X' % computed_crc)
-                    if crc == computed_crc:
-                        self.parse_cosem_frame(data)
+    # def parse_hdlc(self, data: bytes):
+    #     print(' '.join(['%02X' % x for x in data]))
+    #     for c in data:
+    #         if c == MyHdlc.HDLC_FLAG:
+    #             if self._data:
+    #                 self._previous = self._data
+    #                 #print(' '.join(['%02X' % x for x in self._data]))
+    #                 crc = self._data[-2:]
+    #                 crc = crc[1] << 8 | crc[0]
+    #                 self._data = self._data[:-2]
+    #                 #print(' '.join(['%02X' % x for x in self._data]))
+    #                 data = bytes(self._data)
+    #                 computed_crc = crc16(data)
+    #                 print('xxxxxx -> 0x%04X 0x%04X' %(crc, computed_crc))
+    #                 #print('xxxxxx -> 0x%04X' % computed_crc)
+    #                 if crc == computed_crc:
+    #                     self.parse_cosem_frame(data)
 
-                self._data = []
-                continue
-            self._data += [c]
+    #             self._data = []
+    #             continue
+    #         self._data += [c]
 
     # def getObjectCount(cls, data):
     #     cnt = data.getUInt8()
@@ -120,6 +120,9 @@ class MyHdlc:
         print(' '.join(['%02X' % x for x in data]))
         #data = data[31:]
         data = data[14:]
+        print('--')
+        print(' '.join(['%02X' % x for x in data]))
+        print('--')
         indent = 0
         structure_len = 0
 
@@ -179,7 +182,7 @@ class MyHdlc:
             break
 
 hdlc = MyHdlc()
-if False:
+if True:
     for data in eight_bits:
         print('----')
         hdlc.parse_hdlc(data)

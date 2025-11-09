@@ -1,7 +1,11 @@
 #!/usr/bin/python3
 import datetime
+import logging
 import serial
 from enum import Enum
+
+logger = logging.getLogger('am550')
+logging.basicConfig(filename='am550.log', encoding='utf-8', level=logging.DEBUG)
 
 class Mode(Enum):
     STATIC = 1
@@ -30,13 +34,13 @@ class Am550:
     TAG_UINT32 = 6
     TAG_OCTET_STRING = 9
     TAG_UINT16 = 18
-    debug = False
 
     def __init__(self):
         self._escape_next = False
         self._data = []
 
     def parse(self, data: bytes):
+        logger.debug("".join(["%02X" % x for x in data]))
         data = data[1:-1]
         crc = data[-2:]
         crc = crc[1] << 8 | crc[0]
@@ -45,21 +49,13 @@ class Am550:
         if crc == computed_crc:
             return self.parse_cosem_frame(data)
         else:
-            print("Invalid crc16 -> 0x%04X 0x%04X" % (crc, computed_crc))
+            logger.warning("Invalid crc16 -> 0x%04X 0x%04X", crc, computed_crc)
             return []
 
     def parse_cosem_frame(self, data: bytes):
         values = []
         try:
-            if self.debug:
-                print("##################################################")
-                print(len(data))
-                print(" ".join(["%02X" % x for x in data]))
-                print("---")
             data = data[16:]
-            if self.debug:
-                print(" ".join(["%02X" % x for x in data]))
-                print("##################################################")
             indent = 0
             structure_len = 0
             offset = 0
@@ -76,8 +72,7 @@ class Am550:
             ms = array_data[8]
             # print('%d/%d/%d %d:%d:%d:%d' % (year, month, day, hour, minute, second, ms))
             dt = datetime.datetime(year, month, day, hour, minute, second, ms * 1000)
-            if self.debug:
-                print(dt)
+            logger.debug(str(dt))
             values.append(dt)
             offset += 1 + array_len
 
@@ -97,8 +92,7 @@ class Am550:
                     value = int.from_bytes(
                         data[offset + 1 : offset + 5], byteorder="big", signed=False
                     )
-                    if self.debug:
-                        print(" " * indent + "Uint32: 0x%08X (%d)" % (value, value))
+                    logger.debug('%sUint32: 0x%08X (%d)', " " * indent, value, value)
                     values.append(value)
                     offset += 5
                     continue
@@ -106,8 +100,7 @@ class Am550:
                 if data[offset] == Am550.TAG_OCTET_STRING:
                     length = data[offset + 1]
                     string = data[offset + 2 : offset + 2 + length].decode()
-                    if self.debug:
-                        print(" " * indent + "OctetString: " + string)
+                    logger.debug('%sOctetString: %s', " " * indent, string)
                     values.append(string)
                     offset += length + 2
                     continue
@@ -116,20 +109,19 @@ class Am550:
                     value = int.from_bytes(
                         data[offset + 1 : offset + 3], byteorder="big", signed=False
                     )
-                    if self.debug:
-                        print(" " * indent + "Uint16: 0x%04X (%d)" % (value, value))
+                    logger.debug('%sUint16: 0x%04X (%d)', " " * indent, value, value)
                     values.append(value)
                     offset += 3
                     continue
 
-                if self.debug:
-                    print(data[offset])
+                logger.debug('Remaining: %s', "".join(["%02X" % x for x in data[offset:]]))
                 break
         except Exception as e:
             print(e)
         return values
 
 def get_serial():
+    logger.info('Opening serial port')
     ser = serial.Serial()
     ser.baudrate = 115200
     ser.stopbits = serial.STOPBITS_ONE
@@ -164,32 +156,44 @@ elif MODE == Mode.DYNAMIC:
         print(am550.parse(ser.read(100)))
 elif MODE == Mode.PROMETHEUS:
     from prometheus_client import start_http_server, Gauge
-    obis_170 = Gauge('1.7.0', 'Positive active instananeous power')
-    obis_270 = Gauge('2.7.0', 'Negative active instananeous power')
-    obis_180 = Gauge('1.8.0', 'Active energy consumed')
-    obis_280 = Gauge('2.8.0', 'Active energy returned')
-    unkn_001 = Gauge('unknown 001', 'unknown 001')
-    unkn_002 = Gauge('unknown 002', 'unknown 002')
-    unkn_003 = Gauge('unknown 003', 'unknown 003')
-    obis_181 = Gauge('1.8.1', 'Active energy consumed, tarif 1')
-    obis_182 = Gauge('1.8.2', 'Active energy consumed, tarif 2')
-    obis_281 = Gauge('2.8.1', 'Active energy returned, tarif 1')
-    obis_282 = Gauge('2.8.2', 'Active energy returned, tarif 2')
+    obis_170 = Gauge('power_1.7.0', 'Positive active instantaneous power')
+    obis_270 = Gauge('power_2.7.0', 'Negative active instantaneous power')
+    obis_180 = Gauge('power_1.8.0', 'Active energy consumed')
+    obis_280 = Gauge('power_2.8.0', 'Active energy returned')
+    unkn_001 = Gauge('power_unknown 001', 'unknown 001')
+    unkn_002 = Gauge('power_unknown 002', 'unknown 002')
+    unkn_003 = Gauge('power_unknown 003', 'unknown 003')
+    obis_181 = Gauge('power_1.8.1', 'Active energy consumed, tarif 1')
+    obis_182 = Gauge('power_1.8.2', 'Active energy consumed, tarif 2')
+    obis_281 = Gauge('power_2.8.1', 'Active energy returned, tarif 1')
+    obis_282 = Gauge('power_2.8.2', 'Active energy returned, tarif 2')
     start_http_server(10000)
-    ser = get_serial()
+    ser = None
     while True:
-        values = am550.parse(ser.read(100))
-        dt, serial, inst_p, inst_n, cons_tot, ret_tor, un1, un2, un3, cons_t1, cons_t2, ret_t1, ret_t2 = values
-        obis_170.set(inst_p)
-        obis_270.set(inst_n)
-        obis_180.set(cons_tot)
-        obis_280.set(ret_tor)
-        unkn_001.set(un1)
-        unkn_002.set(un2)
-        unkn_003.set(un3)
-        obis_181.set(cons_t1)
-        obis_182.set(cons_t2)
-        obis_281.set(ret_t1)
-        obis_282.set(ret_t2)
+        try:
+            if ser is not None:
+                ser.close()
+                ser = None
+            ser = get_serial()
+            while True:
+                values = am550.parse(ser.read(100))
+                if values:
+                    dt, _serial_num, inst_p, inst_n, cons_tot, ret_tor, un1, un2, un3, cons_t1, cons_t2, ret_t1, ret_t2 = values
+                    obis_170.set(inst_p)
+                    obis_270.set(inst_n)
+                    obis_180.set(cons_tot)
+                    obis_280.set(ret_tor)
+                    unkn_001.set(un1)
+                    unkn_002.set(un2)
+                    unkn_003.set(un3)
+                    obis_181.set(cons_t1)
+                    obis_182.set(cons_t2)
+                    obis_281.set(ret_t1)
+                    obis_282.set(ret_t2)
+                else:
+                    logger.warning('frame could not be decoded.')
+                    break
+        except Exception as e:
+            logger.error(str(e))
 else:
     raise Exception('Unsupported')

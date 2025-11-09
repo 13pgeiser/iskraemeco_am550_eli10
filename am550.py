@@ -1,18 +1,41 @@
 #!/usr/bin/python3
 import datetime
 import logging
+import os
+import psutil
 import serial
+import signal
 from enum import Enum
 
-logger = logging.getLogger('am550')
-logging.basicConfig(filename='am550.log', encoding='utf-8', level=logging.DEBUG)
+logger = logging.getLogger("am550")
+
+if psutil.Process(os.getpid()).ppid() == 1:
+    # We are using systemd
+    filename = "/var/log/am550.log"
+else:
+    filename = "am550.log"
+
+logging.basicConfig(filename=filename, encoding="utf-8", level=logging.INFO)
+
+running = True
+
+
+def exit_gracefully(signum, frame):
+    global running
+    running = False
+
+
+signal.signal(signal.SIGTERM, exit_gracefully)
+
 
 class Mode(Enum):
     STATIC = 1
     DYNAMIC = 2
     PROMETHEUS = 3
 
+
 MODE = Mode.PROMETHEUS
+
 
 # IEC 62056 HDLC (mode E)
 def crc16(data):
@@ -50,6 +73,7 @@ class Am550:
             return self.parse_cosem_frame(data)
         else:
             logger.warning("Invalid crc16 -> 0x%04X 0x%04X", crc, computed_crc)
+            logger.warning("  %s", "".join(["%02X" % x for x in data]))
             return []
 
     def parse_cosem_frame(self, data: bytes):
@@ -92,7 +116,7 @@ class Am550:
                     value = int.from_bytes(
                         data[offset + 1 : offset + 5], byteorder="big", signed=False
                     )
-                    logger.debug('%sUint32: 0x%08X (%d)', " " * indent, value, value)
+                    logger.debug("%sUint32: 0x%08X (%d)", " " * indent, value, value)
                     values.append(value)
                     offset += 5
                     continue
@@ -100,7 +124,7 @@ class Am550:
                 if data[offset] == Am550.TAG_OCTET_STRING:
                     length = data[offset + 1]
                     string = data[offset + 2 : offset + 2 + length].decode()
-                    logger.debug('%sOctetString: %s', " " * indent, string)
+                    logger.debug("%sOctetString: %s", " " * indent, string)
                     values.append(string)
                     offset += length + 2
                     continue
@@ -109,19 +133,22 @@ class Am550:
                     value = int.from_bytes(
                         data[offset + 1 : offset + 3], byteorder="big", signed=False
                     )
-                    logger.debug('%sUint16: 0x%04X (%d)', " " * indent, value, value)
+                    logger.debug("%sUint16: 0x%04X (%d)", " " * indent, value, value)
                     values.append(value)
                     offset += 3
                     continue
 
-                logger.debug('Remaining: %s', "".join(["%02X" % x for x in data[offset:]]))
+                logger.debug(
+                    "Remaining: %s", "".join(["%02X" % x for x in data[offset:]])
+                )
                 break
         except Exception as e:
             print(e)
         return values
 
+
 def get_serial():
-    logger.info('Opening serial port')
+    logger.info("Opening serial port")
     ser = serial.Serial()
     ser.baudrate = 115200
     ser.stopbits = serial.STOPBITS_ONE
@@ -131,6 +158,7 @@ def get_serial():
     ser.port = "/dev/ttyUSB0"
     ser.open()
     return ser
+
 
 am550 = Am550()
 if MODE == Mode.STATIC:
@@ -148,37 +176,54 @@ if MODE == Mode.STATIC:
     #     Uint32: 0x0022CDBB (2280891) # 1.1.8.2
     #     Uint32: 0x00823A0E (8534542) # 1.2.8.1
     #     Uint32: 0x00000000 (0)       # 1.2.8.2
-    data = bytes.fromhex('7EA05CCF022313C662E6E7000F000003030C07E90B08060F172800FFC400020C0908383933383332353006000002F3060000000006005AE5230600823A0E12002F12001E1201640600381768060022CDBB0600823A0E0600000000DBA37E')
+    data = bytes.fromhex(
+        "7EA05CCF022313C662E6E7000F000003030C07E90B08060F172800FFC400020C0908383933383332353006000002F3060000000006005AE5230600823A0E12002F12001E1201640600381768060022CDBB0600823A0E0600000000DBA37E"
+    )
     print(am550.parse(data))
 elif MODE == Mode.DYNAMIC:
     ser = get_serial()
-    while True:
+    while running:
         print(am550.parse(ser.read(100)))
 elif MODE == Mode.PROMETHEUS:
     from prometheus_client import start_http_server, Gauge
-    obis_170 = Gauge('power_1.7.0', 'Positive active instantaneous power')
-    obis_270 = Gauge('power_2.7.0', 'Negative active instantaneous power')
-    obis_180 = Gauge('power_1.8.0', 'Active energy consumed')
-    obis_280 = Gauge('power_2.8.0', 'Active energy returned')
-    unkn_001 = Gauge('power_unknown 001', 'unknown 001')
-    unkn_002 = Gauge('power_unknown 002', 'unknown 002')
-    unkn_003 = Gauge('power_unknown 003', 'unknown 003')
-    obis_181 = Gauge('power_1.8.1', 'Active energy consumed, tarif 1')
-    obis_182 = Gauge('power_1.8.2', 'Active energy consumed, tarif 2')
-    obis_281 = Gauge('power_2.8.1', 'Active energy returned, tarif 1')
-    obis_282 = Gauge('power_2.8.2', 'Active energy returned, tarif 2')
+
+    obis_170 = Gauge("power_1.7.0", "Positive active instantaneous power")
+    obis_270 = Gauge("power_2.7.0", "Negative active instantaneous power")
+    obis_180 = Gauge("power_1.8.0", "Active energy consumed")
+    obis_280 = Gauge("power_2.8.0", "Active energy returned")
+    unkn_001 = Gauge("power_unknown 001", "unknown 001")
+    unkn_002 = Gauge("power_unknown 002", "unknown 002")
+    unkn_003 = Gauge("power_unknown 003", "unknown 003")
+    obis_181 = Gauge("power_1.8.1", "Active energy consumed, tarif 1")
+    obis_182 = Gauge("power_1.8.2", "Active energy consumed, tarif 2")
+    obis_281 = Gauge("power_2.8.1", "Active energy returned, tarif 1")
+    obis_282 = Gauge("power_2.8.2", "Active energy returned, tarif 2")
     start_http_server(10000)
     ser = None
-    while True:
+    while running:
         try:
             if ser is not None:
                 ser.close()
                 ser = None
             ser = get_serial()
-            while True:
+            while running:
                 values = am550.parse(ser.read(100))
                 if values:
-                    dt, _serial_num, inst_p, inst_n, cons_tot, ret_tor, un1, un2, un3, cons_t1, cons_t2, ret_t1, ret_t2 = values
+                    (
+                        dt,
+                        _serial_num,
+                        inst_p,
+                        inst_n,
+                        cons_tot,
+                        ret_tor,
+                        un1,
+                        un2,
+                        un3,
+                        cons_t1,
+                        cons_t2,
+                        ret_t1,
+                        ret_t2,
+                    ) = values
                     obis_170.set(inst_p)
                     obis_270.set(inst_n)
                     obis_180.set(cons_tot)
@@ -191,9 +236,9 @@ elif MODE == Mode.PROMETHEUS:
                     obis_281.set(ret_t1)
                     obis_282.set(ret_t2)
                 else:
-                    logger.warning('frame could not be decoded.')
+                    logger.warning("frame could not be decoded.")
                     break
         except Exception as e:
             logger.error(str(e))
 else:
-    raise Exception('Unsupported')
+    raise Exception("Unsupported")

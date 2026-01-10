@@ -32,3 +32,10 @@ The processing continues at parse_cosem_frame which tries to decode the frame. T
 skipped, I could not find really what they were representing. Then, a timestamp is decoded and finally
 the meters themseleves (encoded using ASN.1).
 
+Result:
+*******
+
+The meters can be displayed in a `Grafana <https://grafana.com/>`__ dashboard.
+
+.. image:: /images/iskraemeco_am550_eli10/grafana.png
+    :alt: Grafana dashboard
